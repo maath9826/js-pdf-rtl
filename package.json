@@ -1,0 +1,56 @@
+{
+  "name": "js-pdf-rtl",
+  "version": "0.1.0",
+  "description": "A comprehensive library for RTL/LTR text rendering in jsPDF with rich text support and automatic language detection",
+  "main": "dist/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types",
+    "build:cjs": "tsc",
+    "build:esm": "tsc --module esnext --outDir dist/esm",
+    "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "jspdf",
+    "rtl",
+    "ltr",
+    "pdf",
+    "text-rendering",
+    "arabic",
+    "hebrew",
+    "multilingual",
+    "rich-text",
+    "language-detection"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/js-pdf-rtl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/js-pdf-rtl/issues"
+  },
+  "homepage": "https://github.com/yourusername/js-pdf-rtl#readme",
+  "peerDependencies": {
+    "cld3-asm": "^4.0.0",
+    "jspdf": "^3.0.0",
+    "rtl-detect": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.7",
+    "@types/rtl-detect": "^1.0.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
