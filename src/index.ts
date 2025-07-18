@@ -1,3 +1,5 @@
+// test comment
+
 import jsPDF from "jspdf";
 import { isRtlLang } from "rtl-detect";
 import { loadModule } from "cld3-asm";
@@ -88,7 +90,10 @@ async function isWordRtlAsync(word: string): Promise<boolean> {
   }
 
   // Fallback to Arabic Unicode range detection
-  const isRtl = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(word);
+  const isRtl =
+    /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(
+      word
+    );
   rtlCache.set(word, isRtl);
   return isRtl;
 }
@@ -122,7 +127,11 @@ function setupFont(doc: jsPDF, config: FontConfig): void {
  * @param defaultFont - Optional default font to reset to
  * @param defaultFontSize - Optional default font size to reset to
  */
-function resetFont(doc: jsPDF, defaultFont?: string, defaultFontSize?: number): void {
+function resetFont(
+  doc: jsPDF,
+  defaultFont?: string,
+  defaultFontSize?: number
+): void {
   if (defaultFont) doc.setFont(defaultFont);
   if (defaultFontSize) doc.setFontSize(defaultFontSize);
 }
@@ -134,12 +143,17 @@ function resetFont(doc: jsPDF, defaultFont?: string, defaultFontSize?: number): 
  * @param margin - Page margin
  * @returns LineMetrics object with calculated values
  */
-function calculateLineMetrics(doc: jsPDF, customLineHeight?: number, margin = DEFAULT_MARGIN): LineMetrics {
-  const lineHeight = customLineHeight || doc.getFontSize() * LINE_HEIGHT_MULTIPLIER;
+function calculateLineMetrics(
+  doc: jsPDF,
+  customLineHeight?: number,
+  margin = DEFAULT_MARGIN
+): LineMetrics {
+  const lineHeight =
+    customLineHeight || doc.getFontSize() * LINE_HEIGHT_MULTIPLIER;
   const pageWidth = doc.internal.pageSize.width;
   const maxWidth = pageWidth - margin * 2;
   const spaceWidth = doc.getTextWidth(" ");
-  
+
   return { lineHeight, pageWidth, maxWidth, spaceWidth };
 }
 
@@ -148,9 +162,11 @@ function calculateLineMetrics(doc: jsPDF, customLineHeight?: number, margin = DE
  * @param fragments - Array of rich text fragments to process
  * @returns Promise<RichWord[]> - Array of processed words with RTL information
  */
-async function processFragmentsToWords(fragments: RichTextFragment[]): Promise<RichWord[]> {
+async function processFragmentsToWords(
+  fragments: RichTextFragment[]
+): Promise<RichWord[]> {
   const words: RichWord[] = [];
-  
+
   for (const fragment of fragments) {
     const fragmentWords = fragment.text
       .split(/\s+/)
@@ -164,7 +180,7 @@ async function processFragmentsToWords(fragments: RichTextFragment[]): Promise<R
       });
     }
   }
-  
+
   return words;
 }
 
@@ -196,8 +212,11 @@ function processLineLayout(
 
   words.forEach((wordObj) => {
     const wordWidthPlusSpace = doc.getTextWidth(wordObj.word + " ");
-    
-    if (currentLine.length > 0 && currentLineWidth + wordWidthPlusSpace > metrics.maxWidth) {
+
+    if (
+      currentLine.length > 0 &&
+      currentLineWidth + wordWidthPlusSpace > metrics.maxWidth
+    ) {
       writeRichLine({
         doc,
         line: currentLine,
@@ -212,7 +231,7 @@ function processLineLayout(
       currentLine = [];
       currentLineWidth = 0;
     }
-    
+
     currentLine.push(wordObj);
     currentLineWidth += wordWidthPlusSpace;
   });
@@ -321,10 +340,9 @@ async function addRichParagraphAsync({
 
   // Reset font
   resetFont(doc, defaultFont, defaultFontSize);
-  
+
   return finalY;
 }
-
 
 /**
  * Helper function to get the starting X position based on alignment
@@ -420,7 +438,6 @@ function writeRichLine({
     if (index != lineCopy.length - 1) currentX += spaceWidth;
   });
 }
-
 
 /**
  * Swaps parentheses for RTL text rendering
