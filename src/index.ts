@@ -1,5 +1,3 @@
-// test comment
-
 import jsPDF from "jspdf";
 import { isRtlLang } from "rtl-detect";
 import { loadModule } from "cld3-asm";

@@ -5,11 +5,6 @@
   "main": "dist/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
     "build": "npm run build:cjs && npm run build:esm && npm run build:types",
     "build:cjs": "tsc",
@@ -30,16 +25,16 @@
     "rich-text",
     "language-detection"
   ],
-  "author": "Your Name",
+  "author": "Muaath <muath.ghassan98@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/js-pdf-rtl.git"
+    "url": "https://github.com/muath98/js-pdf-rtl.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/js-pdf-rtl/issues"
+    "url": "https://github.com/muath98/js-pdf-rtl/issues"
   },
-  "homepage": "https://github.com/yourusername/js-pdf-rtl#readme",
+  "homepage": "https://github.com/muath98/js-pdf-rtl#readme",
   "peerDependencies": {
     "cld3-asm": "^4.0.0",
     "jspdf": "^3.0.0",

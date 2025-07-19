@@ -30,13 +30,13 @@ This library requires the following peer dependencies:
 
 ```typescript
 import jsPDF from "jspdf";
-import { createRichTextFormatter, RichTextFragment } from "js-pdf-rtl";
+import { createRichTextFormatter } from "js-pdf-rtl";
 
 // Create a new PDF document
 const doc = new jsPDF();
 
 // Create the rich text formatter
-const formatter = createRichTextFormatter({
+const {addRichParagraph} = createRichTextFormatter({
   doc,
   defaultMargin: 20,
   defaultIsRTL: false,
@@ -44,29 +44,36 @@ const formatter = createRichTextFormatter({
   defaultFont: "helvetica",
 });
 
-// Define your text content with rich formatting
-const fragments: RichTextFragment[] = [
-  { text: "Hello ", isBold: false },
-  { text: "world", isBold: true },
-  { text: " مرحبا ", isBold: false },
-  { text: "بالعالم", isBold: true },
-];
+let currentY = 50;
 
-// Add the paragraph to your PDF
-const startY = 50;
-formatter
-  .addRichParagraph({
-    fragments,
-    currentY: startY,
-    isRTL: false,
-    align: "left",
-  })
-  .then((finalY) => {
-    console.log(`Text rendered, final Y position: ${finalY}`);
+// First paragraph
+currentY = await addRichParagraph({
+  fragments: [
+    { text: "Welcome to ", isBold: false },
+    { text: "js-pdf-rtl", isBold: true },
+    { text: " - the best RTL/LTR PDF library!" },
+  ],
+  currentY,
+});
 
-    // Save the PDF
-    doc.save("example.pdf");
-  });
+// Add some spacing
+currentY += 10;
+
+// Second paragraph with mixed languages
+currentY = await addRichParagraph({
+  fragments: [
+    { text: "Mixed text: Hello ", isBold: false },
+    { text: "مرحبا", isBold: true },
+    { text: " World ", isBold: false },
+    { text: "العالم", isBold: true },
+  ],
+  currentY,
+  isRTL: true,
+  align: "right",
+});
+
+// Save the PDF
+doc.save("example.pdf");
 ```
 
 ## API Reference
@@ -117,18 +124,6 @@ interface RichTextFragment {
 }
 ```
 
-### `swapParentheses(text)`
-
-Utility function to swap parentheses for RTL text rendering.
-
-#### Parameters
-
-- `text` (string): Input text with parentheses
-
-#### Returns
-
-String with swapped parentheses
-
 ## Examples
 
 ### Basic Usage
@@ -138,7 +133,7 @@ import jsPDF from "jspdf";
 import { createRichTextFormatter } from "js-pdf-rtl";
 
 const doc = new jsPDF();
-const formatter = createRichTextFormatter({ doc });
+const {addRichParagraph} = createRichTextFormatter({ doc });
 
 const fragments = [
   { text: "Regular text " },
@@ -146,7 +141,7 @@ const fragments = [
   { text: " and more regular text." },
 ];
 
-await formatter.addRichParagraph({
+const newY = await addRichParagraph({
   fragments,
   currentY: 50,
   align: "center",
@@ -162,7 +157,7 @@ const fragments = [
   { text: " more English" },
 ];
 
-await formatter.addRichParagraph({
+const newY = await addRichParagraph({
   fragments,
   currentY: 100,
   isRTL: true,
@@ -173,39 +168,18 @@ await formatter.addRichParagraph({
 ### Custom Styling
 
 ```typescript
-const formatter = createRichTextFormatter({
+const {addRichParagraph} = createRichTextFormatter({
   doc,
   defaultMargin: 30,
   defaultFontSize: 14,
   defaultFont: "times",
 });
 
-await formatter.addRichParagraph({
+const newY = await addRichParagraph({
   fragments: [{ text: "Custom styled text", isBold: true }],
   currentY: 150,
   fontSize: 18,
   customLineHeight: 25,
-});
-```
-
-### Sequential Paragraphs
-
-```typescript
-let currentY = 50;
-
-// First paragraph
-currentY = await formatter.addRichParagraph({
-  fragments: [{ text: "First paragraph" }],
-  currentY,
-});
-
-// Add some spacing
-currentY += 10;
-
-// Second paragraph
-currentY = await formatter.addRichParagraph({
-  fragments: [{ text: "Second paragraph" }],
-  currentY,
 });
 ```
 
