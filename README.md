@@ -15,7 +15,7 @@ A comprehensive library for RTL/LTR text rendering in jsPDF with rich text suppo
 ## Installation
 
 ```bash
-npm install js-pdf-rtl jspdf rtl-detect cld3-asm
+npm install js-pdf-rtl
 ```
 
 ## Dependencies
@@ -36,7 +36,7 @@ import { createRichTextFormatter } from "js-pdf-rtl";
 const doc = new jsPDF();
 
 // Create the rich text formatter
-const {addRichParagraph} = createRichTextFormatter({
+const { addRichParagraph } = createRichTextFormatter({
   doc,
   defaultMargin: 20,
   defaultIsRTL: false,
@@ -133,7 +133,7 @@ import jsPDF from "jspdf";
 import { createRichTextFormatter } from "js-pdf-rtl";
 
 const doc = new jsPDF();
-const {addRichParagraph} = createRichTextFormatter({ doc });
+const { addRichParagraph } = createRichTextFormatter({ doc });
 
 const fragments = [
   { text: "Regular text " },
@@ -168,7 +168,7 @@ const newY = await addRichParagraph({
 ### Custom Styling
 
 ```typescript
-const {addRichParagraph} = createRichTextFormatter({
+const { addRichParagraph } = createRichTextFormatter({
   doc,
   defaultMargin: 30,
   defaultFontSize: 14,
