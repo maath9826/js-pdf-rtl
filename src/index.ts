@@ -26,6 +26,8 @@ interface LineMetrics {
   pageWidth: number;
   maxWidth: number;
   spaceWidth: number;
+  leftMargin: number;
+  rightMargin: number;
 }
 
 interface ParagraphProcessingParams {
@@ -35,6 +37,8 @@ interface ParagraphProcessingParams {
   customLineHeight?: number;
   isRTL?: boolean;
   margin?: number;
+  leftMargin?: number;
+  rightMargin?: number;
   align?: Alignment;
   showConsoleLogs?: boolean;
   fontSize?: number;
@@ -138,21 +142,30 @@ function resetFont(
  * Calculates line metrics for the current document state
  * @param doc - The jsPDF document instance
  * @param customLineHeight - Optional custom line height
- * @param margin - Page margin
+ * @param leftMargin - Page left margin
+ * @param rightMargin - Page right margin
  * @returns LineMetrics object with calculated values
  */
 function calculateLineMetrics(
   doc: jsPDF,
   customLineHeight?: number,
-  margin = DEFAULT_MARGIN
+  leftMargin = DEFAULT_MARGIN,
+  rightMargin = DEFAULT_MARGIN
 ): LineMetrics {
   const lineHeight =
     customLineHeight || doc.getFontSize() * LINE_HEIGHT_MULTIPLIER;
   const pageWidth = doc.internal.pageSize.width;
-  const maxWidth = pageWidth - margin * 2;
+  const maxWidth = pageWidth - leftMargin - rightMargin;
   const spaceWidth = doc.getTextWidth(" ");
 
-  return { lineHeight, pageWidth, maxWidth, spaceWidth };
+  return {
+    lineHeight,
+    pageWidth,
+    maxWidth,
+    spaceWidth,
+    leftMargin,
+    rightMargin,
+  };
 }
 
 /**
@@ -199,7 +212,6 @@ function processLineLayout(
   config: {
     isRTL?: boolean;
     align?: Alignment;
-    margin?: number;
     defaultFont?: string;
     showConsoleLogs?: boolean;
   }
@@ -222,7 +234,8 @@ function processLineLayout(
         isRTL: config.isRTL,
         align: config.align,
         pageWidth: metrics.pageWidth,
-        margin: config.margin || DEFAULT_MARGIN,
+        leftMargin: metrics.leftMargin,
+        rightMargin: metrics.rightMargin,
         font: config.defaultFont,
       });
       y += metrics.lineHeight;
@@ -243,7 +256,8 @@ function processLineLayout(
       isRTL: config.isRTL,
       align: config.align,
       pageWidth: metrics.pageWidth,
-      margin: config.margin || DEFAULT_MARGIN,
+      leftMargin: metrics.leftMargin,
+      rightMargin: metrics.rightMargin,
       showConsoleLogs: config.showConsoleLogs,
       font: config.defaultFont,
     });
@@ -256,7 +270,9 @@ function processLineLayout(
  * Creates a pre-configured rich text formatter function with default values
  * @param options - Configuration options for the formatter
  * @param options.doc - The jsPDF document instance
- * @param options.defaultMargin - Default margin for paragraphs
+ * @param options.defaultMargin - Default symmetric margin for paragraphs (fallback)
+ * @param options.defaultLeftMargin - Default left margin
+ * @param options.defaultRightMargin - Default right margin
  * @param options.defaultIsRTL - Default RTL setting
  * @param options.defaultFontSize - Default font size
  * @param options.defaultFont - Default font family
@@ -265,12 +281,16 @@ function processLineLayout(
 export function createRichTextFormatter({
   doc,
   defaultMargin = DEFAULT_MARGIN,
+  defaultLeftMargin,
+  defaultRightMargin,
   defaultIsRTL = false,
   defaultFontSize,
   defaultFont,
 }: {
   doc: jsPDF;
   defaultMargin?: number;
+  defaultLeftMargin?: number;
+  defaultRightMargin?: number;
   defaultIsRTL?: boolean;
   defaultFontSize?: number;
   defaultFont?: string;
@@ -283,10 +303,16 @@ export function createRichTextFormatter({
 
   return {
     addRichParagraph: async (args) => {
-      const { margin, isRTL, fontSize, ...rest } = args;
+      const { margin, leftMargin, rightMargin, isRTL, fontSize, ...rest } = args;
+      const resolvedLeftMargin =
+        leftMargin ?? margin ?? defaultLeftMargin ?? defaultMargin;
+      const resolvedRightMargin =
+        rightMargin ?? margin ?? defaultRightMargin ?? defaultMargin;
       return addRichParagraphAsync({
         doc,
         margin: margin ?? defaultMargin,
+        leftMargin: resolvedLeftMargin,
+        rightMargin: resolvedRightMargin,
         isRTL: isRTL ?? defaultIsRTL,
         fontSize: fontSize ?? defaultFontSize,
         defaultFont,
@@ -308,7 +334,9 @@ async function addRichParagraphAsync({
   currentY,
   customLineHeight,
   isRTL = false,
-  margin = DEFAULT_MARGIN,
+  margin,
+  leftMargin,
+  rightMargin,
   align,
   showConsoleLogs = false,
   fontSize,
@@ -318,8 +346,17 @@ async function addRichParagraphAsync({
   // Setup font
   setupFont(doc, { fontSize });
 
+  const fallbackMargin = margin ?? DEFAULT_MARGIN;
+  const effectiveLeftMargin = leftMargin ?? fallbackMargin;
+  const effectiveRightMargin = rightMargin ?? fallbackMargin;
+
   // Calculate metrics
-  const metrics = calculateLineMetrics(doc, customLineHeight, margin);
+  const metrics = calculateLineMetrics(
+    doc,
+    customLineHeight,
+    effectiveLeftMargin,
+    effectiveRightMargin
+  );
 
   // Process fragments to words
   const words = await processFragmentsToWords(fragments);
@@ -331,7 +368,6 @@ async function addRichParagraphAsync({
   const finalY = processLineLayout(doc, processedWords, currentY, metrics, {
     isRTL,
     align,
-    margin,
     defaultFont,
     showConsoleLogs,
   });
@@ -345,28 +381,39 @@ async function addRichParagraphAsync({
 /**
  * Helper function to get the starting X position based on alignment
  */
-function getStartingX(
-  pageWidth: number,
-  margin: number,
-  currentLineWidth: number,
-  isRTL?: boolean,
-  align?: Alignment
-): number {
+interface StartingXParams {
+  pageWidth: number;
+  leftMargin: number;
+  rightMargin: number;
+  currentLineWidth: number;
+  isRTL?: boolean;
+  align?: Alignment;
+}
+
+function getStartingX({
+  pageWidth,
+  leftMargin,
+  rightMargin,
+  currentLineWidth,
+  isRTL,
+  align,
+}: StartingXParams): number {
   switch (align) {
     case "left":
-      return margin;
+      return leftMargin;
     case "right":
-      return pageWidth - margin - currentLineWidth;
+      return pageWidth - rightMargin - currentLineWidth;
     case "center":
       return (pageWidth - currentLineWidth) / 2;
     default:
-      return getStartingX(
+      return getStartingX({
         pageWidth,
-        margin,
+        leftMargin,
+        rightMargin,
         currentLineWidth,
         isRTL,
-        isRTL ? "right" : "left"
-      );
+        align: isRTL ? "right" : "left",
+      });
   }
 }
 
@@ -377,7 +424,8 @@ interface WriteRichLineParams {
   isRTL?: boolean;
   align?: Alignment;
   pageWidth: number;
-  margin: number;
+  leftMargin: number;
+  rightMargin: number;
   showConsoleLogs?: boolean;
   font?: string;
 }
@@ -393,7 +441,8 @@ function writeRichLine({
   isRTL,
   align,
   pageWidth,
-  margin,
+  leftMargin,
+  rightMargin,
   showConsoleLogs = false,
   font,
 }: WriteRichLineParams) {
@@ -411,13 +460,14 @@ function writeRichLine({
   });
 
   // Calculate the starting X position based on alignment
-  let currentX = getStartingX(
+  let currentX = getStartingX({
     pageWidth,
-    margin,
+    leftMargin,
+    rightMargin,
     currentLineWidth,
     isRTL,
-    align
-  );
+    align,
+  });
 
   lineCopy.forEach((item, index) => {
     if (font) {
