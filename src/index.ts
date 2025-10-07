@@ -489,7 +489,8 @@ function getStartingX({
     case "right":
       return pageWidth - rightMargin - currentLineWidth;
     case "center":
-      return (pageWidth - currentLineWidth) / 2;
+      const availableWidth = pageWidth - leftMargin - rightMargin;
+      return leftMargin + Math.max(0, (availableWidth - currentLineWidth) / 2);
     default:
       return getStartingX({
         pageWidth,
