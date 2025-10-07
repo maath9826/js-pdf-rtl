@@ -30,6 +30,12 @@ interface LineMetrics {
   rightMargin: number;
 }
 
+export interface ParagraphMeasurementResult {
+  lineHeight: number;
+  lineCount: number;
+  currentY: number;
+}
+
 interface ParagraphProcessingParams {
   doc: jsPDF;
   fragments: RichTextFragment[];
@@ -195,6 +201,51 @@ async function processFragmentsToWords(
   return words;
 }
 
+function buildRichLines(
+  doc: jsPDF,
+  words: RichWord[],
+  metrics: LineMetrics
+): RichWord[][] {
+  const lines: RichWord[][] = [];
+  let currentLine: RichWord[] = [];
+  let currentLineWidth = 0;
+
+  words.forEach((wordObj) => {
+    const wordWidthPlusSpace = doc.getTextWidth(wordObj.word + " ");
+
+    if (
+      currentLine.length > 0 &&
+      currentLineWidth + wordWidthPlusSpace > metrics.maxWidth
+    ) {
+      lines.push(currentLine);
+      currentLine = [];
+      currentLineWidth = 0;
+    }
+
+    currentLine.push(wordObj);
+    currentLineWidth += wordWidthPlusSpace;
+  });
+
+  // Write remaining words
+  if (currentLine.length > 0) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+function calculateNextY(
+  currentY: number,
+  lineHeight: number,
+  lineCount: number
+): number {
+  if (lineCount === 0) {
+    return currentY + lineHeight;
+  }
+
+  return currentY + lineHeight * lineCount;
+}
+
 /**
  * Processes line layout and writes lines to the document
  * @param doc - The jsPDF document instance
@@ -216,42 +267,13 @@ function processLineLayout(
     showConsoleLogs?: boolean;
   }
 ): number {
-  let currentLine: RichWord[] = [];
-  let currentLineWidth = 0;
+  const lines = buildRichLines(doc, words, metrics);
   let y = currentY;
 
-  words.forEach((wordObj) => {
-    const wordWidthPlusSpace = doc.getTextWidth(wordObj.word + " ");
-
-    if (
-      currentLine.length > 0 &&
-      currentLineWidth + wordWidthPlusSpace > metrics.maxWidth
-    ) {
-      writeRichLine({
-        doc,
-        line: currentLine,
-        y,
-        isRTL: config.isRTL,
-        align: config.align,
-        pageWidth: metrics.pageWidth,
-        leftMargin: metrics.leftMargin,
-        rightMargin: metrics.rightMargin,
-        font: config.defaultFont,
-      });
-      y += metrics.lineHeight;
-      currentLine = [];
-      currentLineWidth = 0;
-    }
-
-    currentLine.push(wordObj);
-    currentLineWidth += wordWidthPlusSpace;
-  });
-
-  // Write remaining words
-  if (currentLine.length > 0) {
+  lines.forEach((line) => {
     writeRichLine({
       doc,
-      line: currentLine,
+      line,
       y,
       isRTL: config.isRTL,
       align: config.align,
@@ -261,9 +283,10 @@ function processLineLayout(
       showConsoleLogs: config.showConsoleLogs,
       font: config.defaultFont,
     });
-  }
+    y += metrics.lineHeight;
+  });
 
-  return y + metrics.lineHeight;
+  return calculateNextY(currentY, metrics.lineHeight, lines.length);
 }
 
 /**
@@ -298,6 +321,9 @@ export function createRichTextFormatter({
   addRichParagraph: (
     args: Omit<ParagraphProcessingParams, "doc">
   ) => Promise<number>;
+  measureRichParagraph: (
+    args: Omit<ParagraphProcessingParams, "doc">
+  ) => Promise<ParagraphMeasurementResult>;
 } {
   setupFont(doc, { fontSize: defaultFontSize, font: defaultFont });
 
@@ -309,6 +335,24 @@ export function createRichTextFormatter({
       const resolvedRightMargin =
         rightMargin ?? margin ?? defaultRightMargin ?? defaultMargin;
       return addRichParagraphAsync({
+        doc,
+        margin: margin ?? defaultMargin,
+        leftMargin: resolvedLeftMargin,
+        rightMargin: resolvedRightMargin,
+        isRTL: isRTL ?? defaultIsRTL,
+        fontSize: fontSize ?? defaultFontSize,
+        defaultFont,
+        defaultFontSize,
+        ...rest,
+      });
+    },
+    measureRichParagraph: async (args) => {
+      const { margin, leftMargin, rightMargin, isRTL, fontSize, ...rest } = args;
+      const resolvedLeftMargin =
+        leftMargin ?? margin ?? defaultLeftMargin ?? defaultMargin;
+      const resolvedRightMargin =
+        rightMargin ?? margin ?? defaultRightMargin ?? defaultMargin;
+      return measureRichParagraphAsync({
         doc,
         margin: margin ?? defaultMargin,
         leftMargin: resolvedLeftMargin,
@@ -376,6 +420,47 @@ async function addRichParagraphAsync({
   resetFont(doc, defaultFont, defaultFontSize);
 
   return finalY;
+}
+
+async function measureRichParagraphAsync({
+  doc,
+  fragments,
+  currentY,
+  customLineHeight,
+  isRTL = false,
+  margin,
+  leftMargin,
+  rightMargin,
+  fontSize,
+  defaultFontSize,
+  defaultFont,
+}: ParagraphProcessingParams): Promise<ParagraphMeasurementResult> {
+  setupFont(doc, { fontSize });
+
+  const fallbackMargin = margin ?? DEFAULT_MARGIN;
+  const effectiveLeftMargin = leftMargin ?? fallbackMargin;
+  const effectiveRightMargin = rightMargin ?? fallbackMargin;
+
+  const metrics = calculateLineMetrics(
+    doc,
+    customLineHeight,
+    effectiveLeftMargin,
+    effectiveRightMargin
+  );
+
+  const words = await processFragmentsToWords(fragments);
+  const processedWords = reverseLanguageSequences(words, isRTL);
+  const lines = buildRichLines(doc, processedWords, metrics);
+  const lineCount = lines.length;
+  const nextY = calculateNextY(currentY, metrics.lineHeight, lineCount);
+
+  resetFont(doc, defaultFont, defaultFontSize);
+
+  return {
+    lineHeight: metrics.lineHeight,
+    lineCount,
+    currentY: nextY,
+  };
 }
 
 /**
