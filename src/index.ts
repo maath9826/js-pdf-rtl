@@ -24,10 +24,13 @@ interface FontConfig {
 interface LineMetrics {
   lineHeight: number;
   pageWidth: number;
+  pageHeight: number;
   maxWidth: number;
   spaceWidth: number;
   leftMargin: number;
   rightMargin: number;
+  topMargin: number;
+  bottomMargin: number;
 }
 
 export interface ParagraphMeasurementResult {
@@ -45,6 +48,8 @@ interface ParagraphProcessingParams {
   margin?: number;
   leftMargin?: number;
   rightMargin?: number;
+  topMargin?: number;
+  bottomMargin?: number;
   align?: Alignment;
   showConsoleLogs?: boolean;
   fontSize?: number;
@@ -156,21 +161,35 @@ function calculateLineMetrics(
   doc: jsPDF,
   customLineHeight?: number,
   leftMargin = DEFAULT_MARGIN,
-  rightMargin = DEFAULT_MARGIN
+  rightMargin = DEFAULT_MARGIN,
+  topMargin = DEFAULT_MARGIN,
+  bottomMargin = DEFAULT_MARGIN
 ): LineMetrics {
   const lineHeight =
     customLineHeight || doc.getFontSize() * LINE_HEIGHT_MULTIPLIER;
-  const pageWidth = doc.internal.pageSize.width;
+  const pageSize = doc.internal.pageSize as unknown as {
+    width: number;
+    height: number;
+    getHeight?: () => number;
+  };
+  const pageWidth = pageSize.width;
+  const pageHeight =
+    typeof pageSize.getHeight === "function"
+      ? pageSize.getHeight()
+      : pageSize.height;
   const maxWidth = pageWidth - leftMargin - rightMargin;
   const spaceWidth = doc.getTextWidth(" ");
 
   return {
     lineHeight,
     pageWidth,
+    pageHeight,
     maxWidth,
     spaceWidth,
     leftMargin,
     rightMargin,
+    topMargin,
+    bottomMargin,
   };
 }
 
@@ -234,16 +253,43 @@ function buildRichLines(
   return lines;
 }
 
-function calculateNextY(
-  currentY: number,
-  lineHeight: number,
-  lineCount: number
-): number {
-  if (lineCount === 0) {
-    return currentY + lineHeight;
+interface LayoutLinesConfig {
+  lines: RichWord[][];
+  metrics: LineMetrics;
+  currentY: number;
+  onPageBreak?: () => void;
+  onLine?: (line: RichWord[], y: number) => void;
+}
+
+function layoutLinesAcrossPages({
+  lines,
+  metrics,
+  currentY,
+  onPageBreak,
+  onLine,
+}: LayoutLinesConfig): number {
+  const bottomBoundary = metrics.pageHeight - metrics.bottomMargin;
+  const safeTopMargin = Math.max(
+    0,
+    Math.min(metrics.topMargin, bottomBoundary)
+  );
+  let y = currentY;
+
+  if (lines.length === 0) {
+    return currentY + metrics.lineHeight;
   }
 
-  return currentY + lineHeight * lineCount;
+  lines.forEach((line) => {
+    if (y > bottomBoundary) {
+      onPageBreak?.();
+      y = safeTopMargin;
+    }
+
+    onLine?.(line, y);
+    y += metrics.lineHeight;
+  });
+
+  return y;
 }
 
 /**
@@ -268,25 +314,28 @@ function processLineLayout(
   }
 ): number {
   const lines = buildRichLines(doc, words, metrics);
-  let y = currentY;
 
-  lines.forEach((line) => {
-    writeRichLine({
-      doc,
-      line,
-      y,
-      isRTL: config.isRTL,
-      align: config.align,
-      pageWidth: metrics.pageWidth,
-      leftMargin: metrics.leftMargin,
-      rightMargin: metrics.rightMargin,
-      showConsoleLogs: config.showConsoleLogs,
-      font: config.defaultFont,
-    });
-    y += metrics.lineHeight;
+  const finalY = layoutLinesAcrossPages({
+    lines,
+    metrics,
+    currentY,
+    onPageBreak: () => doc.addPage(),
+    onLine: (line, y) =>
+      writeRichLine({
+        doc,
+        line,
+        y,
+        isRTL: config.isRTL,
+        align: config.align,
+        pageWidth: metrics.pageWidth,
+        leftMargin: metrics.leftMargin,
+        rightMargin: metrics.rightMargin,
+        showConsoleLogs: config.showConsoleLogs,
+        font: config.defaultFont,
+      }),
   });
 
-  return calculateNextY(currentY, metrics.lineHeight, lines.length);
+  return finalY;
 }
 
 /**
@@ -306,6 +355,8 @@ export function createRichTextFormatter({
   defaultMargin = DEFAULT_MARGIN,
   defaultLeftMargin,
   defaultRightMargin,
+  defaultTopMargin,
+  defaultBottomMargin,
   defaultIsRTL = false,
   defaultFontSize,
   defaultFont,
@@ -314,6 +365,8 @@ export function createRichTextFormatter({
   defaultMargin?: number;
   defaultLeftMargin?: number;
   defaultRightMargin?: number;
+  defaultTopMargin?: number;
+  defaultBottomMargin?: number;
   defaultIsRTL?: boolean;
   defaultFontSize?: number;
   defaultFont?: string;
@@ -329,16 +382,32 @@ export function createRichTextFormatter({
 
   return {
     addRichParagraph: async (args) => {
-      const { margin, leftMargin, rightMargin, isRTL, fontSize, ...rest } = args;
+      const {
+        margin,
+        leftMargin,
+        rightMargin,
+        topMargin,
+        bottomMargin,
+        isRTL,
+        fontSize,
+        ...rest
+      } = args;
+      const resolvedMargin = margin ?? defaultMargin;
       const resolvedLeftMargin =
         leftMargin ?? margin ?? defaultLeftMargin ?? defaultMargin;
       const resolvedRightMargin =
         rightMargin ?? margin ?? defaultRightMargin ?? defaultMargin;
+      const resolvedTopMargin =
+        topMargin ?? margin ?? defaultTopMargin ?? defaultMargin;
+      const resolvedBottomMargin =
+        bottomMargin ?? margin ?? defaultBottomMargin ?? defaultMargin;
       return addRichParagraphAsync({
         doc,
-        margin: margin ?? defaultMargin,
+        margin: resolvedMargin,
         leftMargin: resolvedLeftMargin,
         rightMargin: resolvedRightMargin,
+        topMargin: resolvedTopMargin,
+        bottomMargin: resolvedBottomMargin,
         isRTL: isRTL ?? defaultIsRTL,
         fontSize: fontSize ?? defaultFontSize,
         defaultFont,
@@ -347,16 +416,32 @@ export function createRichTextFormatter({
       });
     },
     measureRichParagraph: async (args) => {
-      const { margin, leftMargin, rightMargin, isRTL, fontSize, ...rest } = args;
+      const {
+        margin,
+        leftMargin,
+        rightMargin,
+        topMargin,
+        bottomMargin,
+        isRTL,
+        fontSize,
+        ...rest
+      } = args;
+      const resolvedMargin = margin ?? defaultMargin;
       const resolvedLeftMargin =
         leftMargin ?? margin ?? defaultLeftMargin ?? defaultMargin;
       const resolvedRightMargin =
         rightMargin ?? margin ?? defaultRightMargin ?? defaultMargin;
+      const resolvedTopMargin =
+        topMargin ?? margin ?? defaultTopMargin ?? defaultMargin;
+      const resolvedBottomMargin =
+        bottomMargin ?? margin ?? defaultBottomMargin ?? defaultMargin;
       return measureRichParagraphAsync({
         doc,
-        margin: margin ?? defaultMargin,
+        margin: resolvedMargin,
         leftMargin: resolvedLeftMargin,
         rightMargin: resolvedRightMargin,
+        topMargin: resolvedTopMargin,
+        bottomMargin: resolvedBottomMargin,
         isRTL: isRTL ?? defaultIsRTL,
         fontSize: fontSize ?? defaultFontSize,
         defaultFont,
@@ -381,6 +466,8 @@ async function addRichParagraphAsync({
   margin,
   leftMargin,
   rightMargin,
+  topMargin,
+  bottomMargin,
   align,
   showConsoleLogs = false,
   fontSize,
@@ -393,13 +480,17 @@ async function addRichParagraphAsync({
   const fallbackMargin = margin ?? DEFAULT_MARGIN;
   const effectiveLeftMargin = leftMargin ?? fallbackMargin;
   const effectiveRightMargin = rightMargin ?? fallbackMargin;
+  const effectiveTopMargin = topMargin ?? fallbackMargin;
+  const effectiveBottomMargin = bottomMargin ?? fallbackMargin;
 
   // Calculate metrics
   const metrics = calculateLineMetrics(
     doc,
     customLineHeight,
     effectiveLeftMargin,
-    effectiveRightMargin
+    effectiveRightMargin,
+    effectiveTopMargin,
+    effectiveBottomMargin
   );
 
   // Process fragments to words
@@ -431,6 +522,8 @@ async function measureRichParagraphAsync({
   margin,
   leftMargin,
   rightMargin,
+  topMargin,
+  bottomMargin,
   fontSize,
   defaultFontSize,
   defaultFont,
@@ -440,19 +533,27 @@ async function measureRichParagraphAsync({
   const fallbackMargin = margin ?? DEFAULT_MARGIN;
   const effectiveLeftMargin = leftMargin ?? fallbackMargin;
   const effectiveRightMargin = rightMargin ?? fallbackMargin;
+  const effectiveTopMargin = topMargin ?? fallbackMargin;
+  const effectiveBottomMargin = bottomMargin ?? fallbackMargin;
 
   const metrics = calculateLineMetrics(
     doc,
     customLineHeight,
     effectiveLeftMargin,
-    effectiveRightMargin
+    effectiveRightMargin,
+    effectiveTopMargin,
+    effectiveBottomMargin
   );
 
   const words = await processFragmentsToWords(fragments);
   const processedWords = reverseLanguageSequences(words, isRTL);
   const lines = buildRichLines(doc, processedWords, metrics);
   const lineCount = lines.length;
-  const nextY = calculateNextY(currentY, metrics.lineHeight, lineCount);
+  const nextY = layoutLinesAcrossPages({
+    lines,
+    metrics,
+    currentY,
+  });
 
   resetFont(doc, defaultFont, defaultFontSize);
 
