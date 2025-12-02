@@ -1,6 +1,6 @@
 {
   "name": "js-pdf-rtl",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A comprehensive library for RTL/LTR text rendering in jsPDF with rich text support and automatic language detection",
   "main": "dist/index.js",
   "module": "dist/esm/index.js",
