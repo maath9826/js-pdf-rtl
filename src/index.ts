@@ -1,6 +1,5 @@
 import jsPDF from "jspdf";
 import { isRtlLang } from "rtl-detect";
-import { loadModule } from "cld3-asm";
 
 // Constants
 const DEFAULT_MARGIN = 20;
@@ -59,6 +58,7 @@ interface ParagraphProcessingParams {
 
 // Cache for the language detector
 let detectorPromise: Promise<any> | null = null;
+let cld3Available: boolean | null = null;
 
 // Memoization cache for RTL detection
 const rtlCache = new Map<string, boolean>();
@@ -66,11 +66,42 @@ const rtlCache = new Map<string, boolean>();
 /**
  * Initialize the language detector (cached)
  */
-async function getLanguageDetector() {
+async function getLanguageDetector(): Promise<any | null> {
+  // If we already know cld3 is unavailable, skip
+  if (cld3Available === false) {
+    return null;
+  }
+
   if (!detectorPromise) {
-    detectorPromise = loadModule().then((cldFactory) =>
-      cldFactory.create(0, 1000)
-    );
+    detectorPromise = (async () => {
+      try {
+        // Dynamic import to handle CDN loading gracefully
+        const cld3Module = await import("cld3-asm");
+        // Handle both default export and named export patterns
+        const loadModule =
+          cld3Module.loadModule ||
+          (cld3Module.default && cld3Module.default.loadModule) ||
+          cld3Module.default;
+
+        if (typeof loadModule !== "function") {
+          cld3Available = false;
+          return null;
+        }
+
+        const cldFactory = await loadModule();
+        if (!cldFactory || typeof cldFactory.create !== "function") {
+          cld3Available = false;
+          return null;
+        }
+
+        const detector = cldFactory.create(0, 1000);
+        cld3Available = true;
+        return detector;
+      } catch {
+        cld3Available = false;
+        return null;
+      }
+    })();
   }
   return detectorPromise;
 }
@@ -85,21 +116,21 @@ async function isWordRtlAsync(word: string): Promise<boolean> {
     return rtlCache.get(word)!;
   }
 
-  try {
-    const detector = await getLanguageDetector();
-    const detection = detector.findLanguage(word);
+  const detector = await getLanguageDetector();
 
-    if (detection && detection.language) {
-      // Use the detected language code with isRtlLang
-      const isRtl = isRtlLang(detection.language) || false;
-      rtlCache.set(word, isRtl);
-      return isRtl;
+  if (detector && typeof detector.findLanguage === "function") {
+    try {
+      const detection = detector.findLanguage(word);
+
+      if (detection && detection.language) {
+        // Use the detected language code with isRtlLang
+        const isRtl = isRtlLang(detection.language) || false;
+        rtlCache.set(word, isRtl);
+        return isRtl;
+      }
+    } catch {
+      // Silently fall back to pattern matching
     }
-  } catch (error) {
-    console.warn(
-      "Language detection failed, falling back to pattern matching:",
-      error
-    );
   }
 
   // Fallback to Arabic Unicode range detection
