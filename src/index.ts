@@ -12,6 +12,7 @@ interface RichWord {
   word: string;
   isBold: boolean;
   isRtlLang: boolean;
+  fragmentIndex: number;
 }
 
 interface FontConfig {
@@ -234,7 +235,8 @@ async function processFragmentsToWords(
 ): Promise<RichWord[]> {
   const words: RichWord[] = [];
 
-  for (const fragment of fragments) {
+  for (let fragmentIndex = 0; fragmentIndex < fragments.length; fragmentIndex++) {
+    const fragment = fragments[fragmentIndex];
     const fragmentWords = fragment.text
       .split(/\s+/)
       .filter((w) => w.length > 0);
@@ -244,6 +246,7 @@ async function processFragmentsToWords(
         word,
         isBold: fragment.isBold || false,
         isRtlLang: await isWordRtlAsync(word),
+        fragmentIndex,
       });
     }
   }
@@ -388,7 +391,7 @@ export function createRichTextFormatter({
   defaultRightMargin,
   defaultTopMargin,
   defaultBottomMargin,
-  defaultIsRTL = false,
+  defaultIsRTL,
   defaultFontSize,
   defaultFont,
 }: {
@@ -493,7 +496,7 @@ async function addRichParagraphAsync({
   fragments,
   currentY,
   customLineHeight,
-  isRTL = false,
+  isRTL,
   margin,
   leftMargin,
   rightMargin,
@@ -527,12 +530,13 @@ async function addRichParagraphAsync({
   // Process fragments to words
   const words = await processFragmentsToWords(fragments);
 
-  // Apply language sequence reversal
-  const processedWords = reverseLanguageSequences(words, isRTL);
+  // Auto-detect RTL from first word if not explicitly specified
+  const effectiveIsRTL =
+    isRTL !== undefined ? isRTL : words.length > 0 ? words[0].isRtlLang : false;
 
-  // Process layout and render
-  const finalY = processLineLayout(doc, processedWords, currentY, metrics, {
-    isRTL,
+  // Process layout and render (bidi reordering is handled per-line in writeRichLine)
+  const finalY = processLineLayout(doc, words, currentY, metrics, {
+    isRTL: effectiveIsRTL,
     align,
     defaultFont,
     showConsoleLogs,
@@ -549,7 +553,7 @@ async function measureRichParagraphAsync({
   fragments,
   currentY,
   customLineHeight,
-  isRTL = false,
+  isRTL,
   margin,
   leftMargin,
   rightMargin,
@@ -577,8 +581,8 @@ async function measureRichParagraphAsync({
   );
 
   const words = await processFragmentsToWords(fragments);
-  const processedWords = reverseLanguageSequences(words, isRTL);
-  const lines = buildRichLines(doc, processedWords, metrics);
+  // bidi reordering is handled per-line in writeRichLine, so use natural word order here
+  const lines = buildRichLines(doc, words, metrics);
   const lineCount = lines.length;
   const nextY = layoutLinesAcrossPages({
     lines,
@@ -649,6 +653,63 @@ interface WriteRichLineParams {
 }
 
 /**
+ * Reorders words in a line for proper bidirectional text rendering.
+ *
+ * For RTL paragraph direction:
+ * - Reverses the order of segments (so first logical segment appears rightmost)
+ * - Reverses words within RTL segments (so first RTL word appears rightmost in its segment)
+ * - Keeps LTR segments in their original word order
+ *
+ * For LTR paragraph direction:
+ * - Keeps segment order as-is
+ * - Reverses words within RTL segments only
+ *
+ * @param line - Array of rich words in logical order
+ * @param isRtlParagraph - Whether the paragraph has RTL direction
+ * @returns Reordered array for visual rendering left-to-right
+ */
+function reorderForBidi(line: RichWord[], isRtlParagraph: boolean): RichWord[] {
+  if (line.length === 0) return [];
+
+  // Group consecutive words by their RTL status AND fragment index
+  // This ensures words from different fragments don't get merged into the same segment
+  const segments: { isRtl: boolean; words: RichWord[] }[] = [];
+  let currentSegment: RichWord[] = [line[0]];
+  let currentIsRtl = line[0].isRtlLang;
+  let currentFragmentIndex = line[0].fragmentIndex;
+
+  for (let i = 1; i < line.length; i++) {
+    const sameDirection = line[i].isRtlLang === currentIsRtl;
+    const sameFragment = line[i].fragmentIndex === currentFragmentIndex;
+
+    if (sameDirection && sameFragment) {
+      currentSegment.push(line[i]);
+    } else {
+      segments.push({ isRtl: currentIsRtl, words: currentSegment });
+      currentSegment = [line[i]];
+      currentIsRtl = line[i].isRtlLang;
+      currentFragmentIndex = line[i].fragmentIndex;
+    }
+  }
+  segments.push({ isRtl: currentIsRtl, words: currentSegment });
+
+  // For RTL paragraph, reverse segment order
+  if (isRtlParagraph) {
+    segments.reverse();
+  }
+
+  // Reverse words within RTL segments (for visual RTL display)
+  for (const segment of segments) {
+    if (segment.isRtl) {
+      segment.words.reverse();
+    }
+  }
+
+  // Flatten back to array
+  return segments.flatMap(s => s.words);
+}
+
+/**
  * Writes a single line of rich text with proper alignment support
  * @param params - Line writing parameters including doc, line data, and formatting options
  */
@@ -665,8 +726,8 @@ function writeRichLine({
   font,
 }: WriteRichLineParams) {
   const spaceWidth = doc.getTextWidth(" ");
-  const lineCopy = [...line];
-  if (isRTL) lineCopy.reverse();
+  // Reorder words for proper bidirectional rendering
+  const lineCopy = reorderForBidi(line, isRTL ?? false);
   // Calculate the total width of the line for alignment purposes
   let currentLineWidth = 0;
   lineCopy.forEach((item, index) => {
@@ -689,18 +750,14 @@ function writeRichLine({
 
   lineCopy.forEach((item, index) => {
     if (font) {
-      if (item.isBold) {
-        doc.setFont(font, "normal", "bold");
-      } else {
-        doc.setFont(font, "normal", "normal");
-      }
+      doc.setFont(font, "normal", item.isBold ? "bold" : "normal");
     }
 
     doc.text(item.word, currentX, y, { isOutputRtl: item.isRtlLang });
 
     const wordWidth = doc.getTextWidth(item.word);
     currentX += wordWidth;
-    // we always need to add space between words
+    // Add space after word
     if (index != lineCopy.length - 1) currentX += spaceWidth;
   });
 }
@@ -715,66 +772,6 @@ export function swapParentheses(text: string): string {
     .replace(/\(/g, "TEMP_MARKER")
     .replace(/\)/g, "(")
     .replace(/TEMP_MARKER/g, ")");
-}
-
-/**
- * Reverses sequences of words based on language direction for proper RTL/LTR rendering
- * @param paragraph - Array of rich words to process
- * @param isRTL - Whether the overall paragraph direction is RTL
- * @returns Processed array with properly ordered word sequences
- */
-function reverseLanguageSequences(
-  paragraph: RichWord[],
-  isRTL: boolean
-): RichWord[] {
-  const result: RichWord[] = [];
-  let currentSequence: RichWord[] = [];
-  let currentLanguageType: boolean | null = null; // true for RTL, false for LTR
-
-  for (const wordObj of paragraph) {
-    const wordLanguageType = wordObj.isRtlLang;
-
-    // If this is the first word or same language type, add to current sequence
-    if (
-      currentLanguageType === null ||
-      currentLanguageType === wordLanguageType
-    ) {
-      currentSequence.push(wordObj);
-      currentLanguageType = wordLanguageType;
-    } else {
-      // Language changed, process the current sequence first
-      if (currentSequence.length > 0) {
-        // For RTL: reverse English sequences
-        // For LTR: reverse Arabic sequences
-        const shouldReverse = isRTL
-          ? !currentLanguageType
-          : currentLanguageType;
-
-        if (shouldReverse) {
-          result.push(...currentSequence.reverse());
-        } else {
-          result.push(...currentSequence);
-        }
-      }
-
-      // Start new sequence with current word
-      currentSequence = [wordObj];
-      currentLanguageType = wordLanguageType;
-    }
-  }
-
-  // Process the last sequence
-  if (currentSequence.length > 0) {
-    const shouldReverse = isRTL ? !currentLanguageType : currentLanguageType;
-
-    if (shouldReverse) {
-      result.push(...currentSequence.reverse());
-    } else {
-      result.push(...currentSequence);
-    }
-  }
-
-  return result;
 }
 
 // Export the main functionality
