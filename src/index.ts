@@ -753,7 +753,9 @@ function writeRichLine({
       doc.setFont(font, "normal", item.isBold ? "bold" : "normal");
     }
 
-    doc.text(item.word, currentX, y, { isOutputRtl: item.isRtlLang });
+    // Swap parentheses in RTL paragraphs so they display correctly
+    const displayWord = isRTL ? swapParentheses(item.word) : item.word;
+    doc.text(displayWord, currentX, y, { isOutputRtl: item.isRtlLang });
 
     const wordWidth = doc.getTextWidth(item.word);
     currentX += wordWidth;
