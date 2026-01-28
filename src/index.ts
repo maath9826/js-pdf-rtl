@@ -107,8 +107,14 @@ async function getLanguageDetector(): Promise<any | null> {
   return detectorPromise;
 }
 
+// Arabic Unicode ranges pattern - checked first before language detector
+const ARABIC_UNICODE_PATTERN =
+  /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+
 /**
- * Detects if a word is RTL using language detection with memoization
+ * Detects if a word is RTL using language detection with memoization.
+ * Prioritizes Arabic Unicode pattern detection before calling
+ * the language detector to ensure reliable RTL detection.
  * @param word - The word to analyze
  * @returns Promise<boolean> indicating if the word is RTL
  */
@@ -117,6 +123,14 @@ async function isWordRtlAsync(word: string): Promise<boolean> {
     return rtlCache.get(word)!;
   }
 
+  // Check Arabic Unicode characters first - this ensures Arabic words
+  // are always correctly identified as RTL regardless of what cld3 returns
+  if (ARABIC_UNICODE_PATTERN.test(word)) {
+    rtlCache.set(word, true);
+    return true;
+  }
+
+  // For non-Arabic text, use the language detector
   const detector = await getLanguageDetector();
 
   if (detector && typeof detector.findLanguage === "function") {
@@ -130,17 +144,13 @@ async function isWordRtlAsync(word: string): Promise<boolean> {
         return isRtl;
       }
     } catch {
-      // Silently fall back to pattern matching
+      // Silently fall back to false for non-Arabic text
     }
   }
 
-  // Fallback to Arabic Unicode range detection
-  const isRtl =
-    /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(
-      word
-    );
-  rtlCache.set(word, isRtl);
-  return isRtl;
+  // Default to LTR for non-Arabic/Hebrew text when detector unavailable
+  rtlCache.set(word, false);
+  return false;
 }
 
 /**
